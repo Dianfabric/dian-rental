@@ -732,8 +732,31 @@ function renderTable(records) {
 let selectedClients = new Set();
 
 function renderGroup(records) {
+  // 담당자 필터가 걸린 경우: 해당 담당자가 빌려준 거래처의 전체 항목을 표시
+  const managerFilter = document.getElementById('filterManager').value;
+  let groupRecords = records;
+  if (managerFilter) {
+    const matchedClients = new Set(records.map(r => r.clientName || '(거래처 없음)'));
+    const q      = document.getElementById('searchInput').value.toLowerCase();
+    const status = document.getElementById('filterStatus').value;
+    const brand  = document.getElementById('filterBrand').value;
+    groupRecords = allRecords.filter(r => {
+      const key = r.clientName || '(거래처 없음)';
+      if (!matchedClients.has(key)) return false;
+      if (status === 'overdue'   && r.status !== 'overdue')   return false;
+      if (status === 'rented'    && r.status !== 'rented')    return false;
+      if (status === 'available' && r.status !== 'available') return false;
+      if (brand && r.brand !== brand) return false;
+      if (q && !(r.name.toLowerCase().includes(q) ||
+                 (r.clientName || '').toLowerCase().includes(q) ||
+                 r.brand.toLowerCase().includes(q) ||
+                 r.fabric.toLowerCase().includes(q))) return false;
+      return true;
+    });
+  }
+
   const byClient = {};
-  records.forEach(r => {
+  groupRecords.forEach(r => {
     const key = r.clientName || '(거래처 없음)';
     if (!byClient[key]) byClient[key] = { overdue: 0, rented: 0, items: [], phone: r.clientPhone || '' };
     byClient[key].items.push(r);
@@ -761,10 +784,13 @@ function renderGroup(records) {
       const thumb = r.thumbUrl
         ? `<img style="width:50px;height:68px;object-fit:cover;border-radius:6px;cursor:pointer" src="${r.thumbUrl}" loading="lazy" onclick="openModal('${r.id}')" onerror="this.style.display='none'">`
         : '';
-      return `<div style="text-align:center;cursor:pointer" onclick="openModal('${r.id}')">
+      const isOther = managerFilter && r.manager && r.manager !== managerFilter;
+      const otherMgr = isOther ? `<div style="font-size:.55rem;color:#94a3b8">${r.manager}</div>` : '';
+      return `<div style="text-align:center;cursor:pointer;opacity:${isOther ? '.55' : '1'}" onclick="openModal('${r.id}')">
         ${thumb}
         <div style="font-size:.65rem;margin-top:3px;color:var(--text)">${r.name}</div>
         ${r.status === 'overdue' ? `<div style="font-size:.6rem;color:var(--orange)">+${r.overdueDays}일</div>` : ''}
+        ${otherMgr}
       </div>`;
     }).join('');
 
