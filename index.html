@@ -369,6 +369,7 @@
     #modal .row label { color: var(--muted); }
     #modal .row span { font-weight: 600; }
   </style>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 </head>
 <body>
 
@@ -842,178 +843,95 @@ function addNim(name) {
   return name;
 }
 
-// ── PDF 생성 ──
-function makePDF() {
+// ── PDF 생성 (거래처별 개별 파일 자동 다운로드) ──
+async function makePDF() {
   const clients = [...selectedClients];
   if (!clients.length) return;
 
-  const sections = clients.map(cname => {
+  const btn = document.getElementById('pdfBtn');
+  btn.disabled = true;
+  const originalHTML = btn.innerHTML;
+  const today = new Date().toLocaleDateString('ko-KR');
+
+  for (let i = 0; i < clients.length; i++) {
+    const cname = clients[i];
+    btn.innerHTML = `⏳ ${i + 1}/${clients.length} 생성 중...`;
+
     const items = allRecords
       .filter(r => (r.clientName || '(거래처 없음)') === cname)
       .sort((a, b) => (a.rentDate || '').localeCompare(b.rentDate || ''));
     const phone = items[0]?.clientPhone || '';
-    return { cname, phone, items };
-  });
-
-  const sectionsHtml = sections.map(({ cname, phone, items }) => {
     const displayName = addNim(cname);
+
     const cardsHtml = items.map(r => {
       const imgHtml = r.thumbUrl
-        ? `<img src="${r.thumbUrl}" onerror="this.parentNode.innerHTML='<div class=no-img>📘</div>'">`
-        : `<div class="no-img">📘</div>`;
+        ? `<img src="${r.thumbUrl}" crossorigin="anonymous" style="width:100%;height:130px;object-fit:cover;display:block;background:#f1f5f9">`
+        : `<div style="width:100%;height:130px;background:#e9ecef;display:flex;align-items:center;justify-content:center;font-size:26px;color:#94a3b8">-</div>`;
       const overdueHtml = r.overdueDays > 0
-        ? `<div class="overdue-tag">+${r.overdueDays}일 연체</div>`
-        : `<div class="rented-tag">대여중</div>`;
-      return `
-        <div class="card">
-          <div class="card-img">${imgHtml}</div>
-          <div class="card-info">
-            <div class="item-name">${r.name}</div>
-            <div class="info-row"><span class="lbl">대여일</span><span>${r.rentDate || '-'}</span></div>
-            <div class="info-row"><span class="lbl">반납예정</span><span>${r.returnDate || '-'}</span></div>
-            ${overdueHtml}
-          </div>
-        </div>`;
+        ? `<span style="margin-top:4px;background:#fce8e6;color:#c5221f;padding:2px 7px;border-radius:4px;font-size:9px;font-weight:700;display:inline-block">+${r.overdueDays}일 연체</span>`
+        : `<span style="margin-top:4px;background:#fee2e2;color:#991b1b;padding:2px 7px;border-radius:4px;font-size:9px;font-weight:600;display:inline-block">대여중</span>`;
+      return `<div style="width:33.333%;border-right:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0;box-sizing:border-box">
+        ${imgHtml}
+        <div style="padding:7px 9px">
+          <div style="font-weight:700;font-size:10.5px;margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${r.name}</div>
+          <div style="display:flex;justify-content:space-between;font-size:9px;color:#64748b;margin-bottom:2px"><span style="color:#94a3b8">대여일</span><span>${r.rentDate || '-'}</span></div>
+          <div style="display:flex;justify-content:space-between;font-size:9px;color:#64748b;margin-bottom:2px"><span style="color:#94a3b8">반납예정</span><span>${r.returnDate || '-'}</span></div>
+          ${overdueHtml}
+        </div>
+      </div>`;
     }).join('');
 
-    return `
-      <div class="client-section">
-        <div class="client-header">
-          <span class="client-name">📦 ${displayName}</span>
-          <span class="client-meta">${phone ? '📞 ' + phone + '  ·  ' : ''}총 ${items.length}건</span>
+    const html = `<div style="font-family:'Malgun Gothic','Apple SD Gothic Neo',sans-serif;color:#1e293b;background:white;width:794px">
+      <div style="background:#1a1a2e;color:white;padding:12px 20px;display:flex;justify-content:space-between;align-items:center">
+        <div>
+          <div style="font-size:15px;font-weight:800">DIAN 샘플북 대여현황</div>
+          <div style="font-size:10px;opacity:.65;margin-top:2px">${items.length}개 샘플북</div>
         </div>
-        <div class="card-grid">${cardsHtml}</div>
-      </div>`;
-  }).join('');
+        <div style="font-size:10px;opacity:.7">출력일: ${today}</div>
+      </div>
+      <div style="padding:14px 16px">
+        <div style="background:#334155;color:white;padding:7px 14px;border-radius:6px 6px 0 0;display:flex;justify-content:space-between;align-items:center">
+          <span style="font-size:12px;font-weight:700">${displayName}</span>
+          <span style="font-size:10px;opacity:.7">${phone ? phone + '  · ' : ''}총 ${items.length}건</span>
+        </div>
+        <div style="display:flex;flex-wrap:wrap;border:1px solid #e2e8f0;border-top:none;border-radius:0 0 6px 6px;overflow:hidden">
+          ${cardsHtml}
+        </div>
+      </div>
+    </div>`;
 
-  const today = new Date().toLocaleDateString('ko-KR');
-  const totalItems = sections.reduce((s, g) => s + g.items.length, 0);
+    const container = document.createElement('div');
+    container.style.cssText = 'position:fixed;left:-9999px;top:0;background:white;z-index:-1';
+    container.innerHTML = html;
+    document.body.appendChild(container);
 
-  const win = window.open('', '_blank');
-  win.document.write(`<!DOCTYPE html>
-<html lang="ko"><head>
-<meta charset="UTF-8">
-<title>DIAN 샘플북 대여현황</title>
-<style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body {
-    font-family: "Malgun Gothic", "Apple SD Gothic Neo", sans-serif;
-    font-size: 11px; color: #1e293b;
-    background: white;
-  }
-  .page-header {
-    background: #1a1a2e; color: white;
-    padding: 12px 20px;
-    display: flex; justify-content: space-between; align-items: center;
-  }
-  .page-header h1 { font-size: 15px; font-weight: 800; }
-  .page-header p { font-size: 10px; opacity: .65; margin-top: 2px; }
-  .page-header .meta { font-size: 10px; opacity: .7; text-align: right; }
-
-  .body { padding: 14px 16px; }
-
-  .client-section {
-    margin-bottom: 20px;
-  }
-  .client-header {
-    background: #334155; color: white;
-    padding: 7px 14px; border-radius: 6px 6px 0 0;
-    display: flex; justify-content: space-between; align-items: center;
-  }
-  .client-name { font-size: 12px; font-weight: 700; }
-  .client-meta { font-size: 10px; opacity: .7; }
-
-  .card-grid {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 0;
-    border: 1px solid #e2e8f0;
-    border-top: none;
-    border-radius: 0 0 6px 6px;
-    overflow: hidden;
-  }
-  .card {
-    border-right: 1px solid #e2e8f0;
-    border-bottom: 1px solid #e2e8f0;
-    break-inside: avoid;
-    page-break-inside: avoid;
-  }
-  .card:nth-child(3n) { border-right: none; }
-
-  .card-img {
-    width: 100%;
-    aspect-ratio: 3/4;
-    overflow: hidden;
-    background: #f1f5f9;
-  }
-  .card-img img {
-    width: 100%; height: 100%;
-    object-fit: cover; display: block;
-  }
-  .no-img {
-    width: 100%; height: 100%;
-    display: flex; align-items: center;
-    justify-content: center; font-size: 28px;
-    color: #94a3b8;
-  }
-  .card-info { padding: 8px 10px; }
-  .item-name {
-    font-weight: 700; font-size: 11px;
-    margin-bottom: 5px;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  }
-  .info-row {
-    display: flex; justify-content: space-between;
-    font-size: 9.5px; color: #475569;
-    margin-bottom: 2px;
-  }
-  .lbl { color: #94a3b8; }
-  .overdue-tag {
-    margin-top: 5px;
-    background: #fce8e6; color: #c5221f;
-    padding: 2px 7px; border-radius: 4px;
-    font-size: 9px; font-weight: 700;
-    display: inline-block;
-  }
-  .rented-tag {
-    margin-top: 5px;
-    background: #fee2e2; color: #991b1b;
-    padding: 2px 7px; border-radius: 4px;
-    font-size: 9px; font-weight: 600;
-    display: inline-block;
-  }
-
-  @media print {
-    @page { margin: 8mm; size: A4; }
-    body { background: white; }
-  }
-</style>
-</head>
-<body>
-  <div class="page-header">
-    <div>
-      <h1>📚 DIAN 샘플북 대여현황</h1>
-      <p>${sections.length}개 거래처 · ${totalItems}개 샘플북</p>
-    </div>
-    <div class="meta">출력일: ${today}</div>
-  </div>
-  <div class="body">
-    ${sectionsHtml}
-  </div>
-  <script>
-    window.onload = () => {
-      const imgs = Array.from(document.querySelectorAll('img'));
-      if (!imgs.length) { setTimeout(() => window.print(), 300); return; }
+    // 이미지 로딩 대기 (최대 10초)
+    await new Promise(resolve => {
+      const imgs = container.querySelectorAll('img');
+      if (!imgs.length) { resolve(); return; }
       let done = 0;
-      const tryPrint = () => { if (++done >= imgs.length) setTimeout(() => window.print(), 300); };
+      const check = () => { if (++done >= imgs.length) resolve(); };
       imgs.forEach(img => {
-        if (img.complete) tryPrint();
-        else { img.onload = tryPrint; img.onerror = tryPrint; }
+        if (img.complete) check();
+        else { img.onload = check; img.onerror = check; }
       });
-    };
-  <\/script>
-</body></html>`);
-  win.document.close();
+      setTimeout(resolve, 10000);
+    });
+
+    const safeFilename = addNim(cname).replace(/[\\/:*?"<>|]/g, '_');
+    await html2pdf().set({
+      margin: [8, 8, 8, 8],
+      filename: `${safeFilename} 샘플북대여현황.pdf`,
+      image: { type: 'jpeg', quality: 0.9 },
+      html2canvas: { scale: 2, useCORS: true, logging: false },
+      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+    }).from(container.firstElementChild).save();
+
+    document.body.removeChild(container);
+  }
+
+  btn.disabled = false;
+  btn.innerHTML = originalHTML;
 }
 
 // ── Modal ──
