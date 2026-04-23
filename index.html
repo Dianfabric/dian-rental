@@ -825,11 +825,11 @@ function addNim(name) {
     '전무','사원','직원','담당자','담당','인테리어'
   ];
 
-  // 괄호로 끝나는 경우: 보눔(지은옥실장) → 보눔(지은옥실장님)
+  // 괄호로 끝나는 경우: 보눔(지은옥실장) → 보눔(지은옥실장님), 이공간디자인(송혜란) → 이공간디자인(송혜란님)
   const parenMatch = name.match(/^(.*)\(([^)]+)\)$/);
   if (parenMatch) {
     const inside = parenMatch[2];
-    if (titles.some(t => inside.endsWith(t))) {
+    if (titles.some(t => inside.endsWith(t)) || /^[가-힣]{2,4}$/.test(inside)) {
       return parenMatch[1] + '(' + inside + '님)';
     }
     return name;
