@@ -865,8 +865,8 @@ async function makePDF() {
 
     const cardsHtml = items.map(r => {
       const imgHtml = r.thumbUrl
-        ? `<img src="${r.thumbUrl}" crossorigin="anonymous" style="width:100%;height:130px;object-fit:cover;display:block;background:#f1f5f9">`
-        : `<div style="width:100%;height:130px;background:#e9ecef;display:flex;align-items:center;justify-content:center;font-size:26px;color:#94a3b8">-</div>`;
+        ? `<img src="${r.thumbUrl}" crossorigin="anonymous" style="width:100%;height:200px;object-fit:cover;display:block;background:#f1f5f9">`
+        : `<div style="width:100%;height:200px;background:#e9ecef;display:flex;align-items:center;justify-content:center;font-size:26px;color:#94a3b8">-</div>`;
       const overdueHtml = r.overdueDays > 0
         ? `<span style="margin-top:4px;background:#fce8e6;color:#c5221f;padding:2px 7px;border-radius:4px;font-size:9px;font-weight:700;display:inline-block">+${r.overdueDays}일 연체</span>`
         : `<span style="margin-top:4px;background:#fee2e2;color:#991b1b;padding:2px 7px;border-radius:4px;font-size:9px;font-weight:600;display:inline-block">대여중</span>`;
