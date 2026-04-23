@@ -770,7 +770,7 @@ function renderGroup(records) {
     return `<div class="group-section">
       <div class="${headerClass}" style="gap:10px">
         <input type="checkbox" class="group-check" data-client="${name}" ${isChecked} onchange="toggleClient('${name}', this.checked)">
-        <span style="flex:1">📦 ${name}</span>
+        <span style="flex:1">📦 ${addNim(name)}</span>
         <span class="group-count">총 ${info.items.length}건</span>
         ${overdueTag}
       </div>
@@ -814,6 +814,34 @@ function updatePdfToolbar() {
   toolbar.classList.toggle('show', count > 0);
 }
 
+// ── 님 붙이기 ──
+function addNim(name) {
+  if (!name || name.endsWith('님')) return name;
+
+  const titles = [
+    '팀장','과장','실장','대표','디자이너','이사','대리','부장','사장',
+    '원장','소장','매니저','주임','차장','선임','책임','수석','상무',
+    '전무','사원','직원','담당자','담당','인테리어'
+  ];
+
+  // 괄호로 끝나는 경우: 보눔(지은옥실장) → 보눔(지은옥실장님)
+  const parenMatch = name.match(/^(.*)\(([^)]+)\)$/);
+  if (parenMatch) {
+    const inside = parenMatch[2];
+    if (titles.some(t => inside.endsWith(t))) {
+      return parenMatch[1] + '(' + inside + '님)';
+    }
+    return name;
+  }
+
+  // 직접 직책으로 끝나는 경우: 김수옥팀장 → 김수옥팀장님
+  if (titles.some(t => name.endsWith(t))) {
+    return name + '님';
+  }
+
+  return name;
+}
+
 // ── PDF 생성 ──
 function makePDF() {
   const clients = [...selectedClients];
@@ -828,6 +856,7 @@ function makePDF() {
   });
 
   const sectionsHtml = sections.map(({ cname, phone, items }) => {
+    const displayName = addNim(cname);
     const cardsHtml = items.map(r => {
       const imgHtml = r.thumbUrl
         ? `<img src="${r.thumbUrl}" onerror="this.parentNode.innerHTML='<div class=no-img>📘</div>'">`
@@ -850,7 +879,7 @@ function makePDF() {
     return `
       <div class="client-section">
         <div class="client-header">
-          <span class="client-name">📦 ${cname}</span>
+          <span class="client-name">📦 ${displayName}</span>
           <span class="client-meta">${phone ? '📞 ' + phone + '  ·  ' : ''}총 ${items.length}건</span>
         </div>
         <div class="card-grid">${cardsHtml}</div>
