@@ -914,7 +914,6 @@ function makePDF() {
 
   .client-section {
     margin-bottom: 20px;
-    page-break-inside: avoid;
   }
   .client-header {
     background: #334155; color: white;
@@ -936,6 +935,8 @@ function makePDF() {
   .card {
     border-right: 1px solid #e2e8f0;
     border-bottom: 1px solid #e2e8f0;
+    break-inside: avoid;
+    page-break-inside: avoid;
   }
   .card:nth-child(3n) { border-right: none; }
 
@@ -999,7 +1000,18 @@ function makePDF() {
   <div class="body">
     ${sectionsHtml}
   </div>
-  <script>window.onload = () => { window.print(); }<\/script>
+  <script>
+    window.onload = () => {
+      const imgs = Array.from(document.querySelectorAll('img'));
+      if (!imgs.length) { setTimeout(() => window.print(), 300); return; }
+      let done = 0;
+      const tryPrint = () => { if (++done >= imgs.length) setTimeout(() => window.print(), 300); };
+      imgs.forEach(img => {
+        if (img.complete) tryPrint();
+        else { img.onload = tryPrint; img.onerror = tryPrint; }
+      });
+    };
+  <\/script>
 </body></html>`);
   win.document.close();
 }
