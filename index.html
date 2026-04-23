@@ -780,17 +780,22 @@ function renderGroup(records) {
     const overdueTag = info.overdue > 0
       ? `<span class="group-count" style="background:rgba(255,255,255,.4)">🚨 연체 ${info.overdue}</span>` : '';
 
+    // 담당자별 대여 수 집계 → 많은 순으로 표시
+    const mgrCount = {};
+    info.items.forEach(r => { if (r.manager) mgrCount[r.manager] = (mgrCount[r.manager] || 0) + 1; });
+    const mgrList = Object.entries(mgrCount).sort(([,a],[,b]) => b - a).map(([m]) => m);
+    const mgrBadges = mgrList.map(m =>
+      `<span style="font-size:.7rem;opacity:.8;display:block;text-align:right;line-height:1.5">${m}</span>`
+    ).join('');
+
     const cardsMini = info.items.map(r => {
       const thumb = r.thumbUrl
         ? `<img style="width:50px;height:68px;object-fit:cover;border-radius:6px;cursor:pointer" src="${r.thumbUrl}" loading="lazy" onclick="openModal('${r.id}')" onerror="this.style.display='none'">`
         : '';
-      const isOther = managerFilter && r.manager && r.manager !== managerFilter;
-      const otherMgr = isOther ? `<div style="font-size:.55rem;color:#94a3b8">${r.manager}</div>` : '';
-      return `<div style="text-align:center;cursor:pointer;opacity:${isOther ? '.55' : '1'}" onclick="openModal('${r.id}')">
+      return `<div style="text-align:center;cursor:pointer" onclick="openModal('${r.id}')">
         ${thumb}
         <div style="font-size:.65rem;margin-top:3px;color:var(--text)">${r.name}</div>
         ${r.status === 'overdue' ? `<div style="font-size:.6rem;color:var(--orange)">+${r.overdueDays}일</div>` : ''}
-        ${otherMgr}
       </div>`;
     }).join('');
 
@@ -800,6 +805,7 @@ function renderGroup(records) {
         <span style="flex:1">📦 ${addNim(name)}</span>
         <span class="group-count">총 ${info.items.length}건</span>
         ${overdueTag}
+        <div>${mgrBadges}</div>
       </div>
       <div style="display:flex;flex-wrap:wrap;gap:10px;padding:4px 2px;">
         ${cardsMini}
@@ -879,12 +885,6 @@ async function makePDF() {
   const originalHTML = btn.innerHTML;
   const today = new Date().toLocaleDateString('ko-KR');
 
-  // A4(210×297mm), 여백 8mm 기준 → 페이지당 컨텐츠 높이 ≈ 1149px
-  // 헤더(56) + 클라이언트바+패딩(59) = 115px 오버헤드
-  // 남은 1034px ÷ 3행 = 344px/카드, 정보영역 74px → 이미지 240px
-  const CARDS_PER_PAGE = 9;
-  const IMG_H = 240;
-
   for (let i = 0; i < clients.length; i++) {
     const cname = clients[i];
     btn.innerHTML = `⏳ ${i + 1}/${clients.length} 생성 중...`;
@@ -895,11 +895,10 @@ async function makePDF() {
     const phone = items[0]?.clientPhone || '';
     const displayName = addNim(cname);
 
-    // 9개씩 청크 분할
-    const chunks = [];
-    for (let j = 0; j < items.length; j += CARDS_PER_PAGE) {
-      chunks.push(items.slice(j, j + CARDS_PER_PAGE));
-    }
+    // 아이템 수에 따라 이미지 높이 자동 계산 → 무조건 1페이지
+    // A4 여백 8mm: 페이지 컨텐츠 1149px, 오버헤드 115px, 카드 정보 74px
+    const rows = Math.ceil(items.length / 3);
+    const IMG_H = Math.max(60, Math.floor(1034 / rows * 0.93) - 74);
 
     const buildCard = r => {
       const imgHtml = r.thumbUrl
@@ -919,20 +918,6 @@ async function makePDF() {
       </div>`;
     };
 
-    const chunksHtml = chunks.map((chunkItems, idx) => {
-      const pageBreak = idx > 0 ? 'page-break-before:always;' : '';
-      const pageLabel = chunks.length > 1 ? ` (${idx + 1}/${chunks.length})` : '';
-      return `<div style="${pageBreak}padding:14px 16px 16px">
-        <div style="background:#334155;color:white;padding:7px 14px;border-radius:6px 6px 0 0;display:flex;justify-content:space-between;align-items:center">
-          <span style="font-size:12px;font-weight:700">${displayName}${pageLabel}</span>
-          <span style="font-size:10px;opacity:.7">${phone ? phone + '  · ' : ''}총 ${items.length}건</span>
-        </div>
-        <div style="display:flex;flex-wrap:wrap;border:1px solid #e2e8f0;border-top:none;border-radius:0 0 6px 6px;overflow:hidden">
-          ${chunkItems.map(buildCard).join('')}
-        </div>
-      </div>`;
-    }).join('');
-
     const html = `<div style="font-family:'Malgun Gothic','Apple SD Gothic Neo',sans-serif;color:#1e293b;background:white;width:794px">
       <div style="background:#1a1a2e;color:white;padding:12px 20px;display:flex;justify-content:space-between;align-items:center">
         <div>
@@ -941,7 +926,15 @@ async function makePDF() {
         </div>
         <div style="font-size:10px;opacity:.7">출력일: ${today}</div>
       </div>
-      ${chunksHtml}
+      <div style="padding:14px 16px 16px">
+        <div style="background:#334155;color:white;padding:7px 14px;border-radius:6px 6px 0 0;display:flex;justify-content:space-between;align-items:center">
+          <span style="font-size:12px;font-weight:700">${displayName}</span>
+          <span style="font-size:10px;opacity:.7">${phone ? phone + '  · ' : ''}총 ${items.length}건</span>
+        </div>
+        <div style="display:flex;flex-wrap:wrap;border:1px solid #e2e8f0;border-top:none;border-radius:0 0 6px 6px;overflow:hidden">
+          ${items.map(buildCard).join('')}
+        </div>
+      </div>
     </div>`;
 
     const container = document.createElement('div');
@@ -967,8 +960,7 @@ async function makePDF() {
       filename: `${safeFilename} 샘플북대여현황.pdf`,
       image: { type: 'jpeg', quality: 0.9 },
       html2canvas: { scale: 2, useCORS: true, logging: false },
-      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-      pagebreak: { mode: 'css' }
+      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
     }).from(container.firstElementChild).save();
 
     document.body.removeChild(container);
