@@ -843,7 +843,7 @@ function addNim(name) {
   return name;
 }
 
-// ── PDF 생성 (거래처별 개별 파일 자동 다운로드) ──
+// ── PDF 생성 (거래처별 개별 파일, 3×3=9장씩 페이지 분리) ──
 async function makePDF() {
   const clients = [...selectedClients];
   if (!clients.length) return;
@@ -852,6 +852,12 @@ async function makePDF() {
   btn.disabled = true;
   const originalHTML = btn.innerHTML;
   const today = new Date().toLocaleDateString('ko-KR');
+
+  // A4(210×297mm), 여백 8mm 기준 → 페이지당 컨텐츠 높이 ≈ 1149px
+  // 헤더(56) + 클라이언트바+패딩(59) = 115px 오버헤드
+  // 남은 1034px ÷ 3행 = 344px/카드, 정보영역 74px → 이미지 240px
+  const CARDS_PER_PAGE = 9;
+  const IMG_H = 240;
 
   for (let i = 0; i < clients.length; i++) {
     const cname = clients[i];
@@ -863,20 +869,40 @@ async function makePDF() {
     const phone = items[0]?.clientPhone || '';
     const displayName = addNim(cname);
 
-    const cardsHtml = items.map(r => {
+    // 9개씩 청크 분할
+    const chunks = [];
+    for (let j = 0; j < items.length; j += CARDS_PER_PAGE) {
+      chunks.push(items.slice(j, j + CARDS_PER_PAGE));
+    }
+
+    const buildCard = r => {
       const imgHtml = r.thumbUrl
-        ? `<img src="${r.thumbUrl}" crossorigin="anonymous" style="width:100%;height:200px;object-fit:cover;display:block;background:#f1f5f9">`
-        : `<div style="width:100%;height:200px;background:#e9ecef;display:flex;align-items:center;justify-content:center;font-size:26px;color:#94a3b8">-</div>`;
+        ? `<img src="${r.thumbUrl}" crossorigin="anonymous" style="width:100%;height:${IMG_H}px;object-fit:cover;display:block;background:#f1f5f9">`
+        : `<div style="width:100%;height:${IMG_H}px;background:#e9ecef;display:flex;align-items:center;justify-content:center;font-size:26px;color:#94a3b8">-</div>`;
       const overdueHtml = r.overdueDays > 0
         ? `<span style="margin-top:4px;background:#fce8e6;color:#c5221f;padding:2px 7px;border-radius:4px;font-size:9px;font-weight:700;display:inline-block">+${r.overdueDays}일 연체</span>`
         : `<span style="margin-top:4px;background:#fee2e2;color:#991b1b;padding:2px 7px;border-radius:4px;font-size:9px;font-weight:600;display:inline-block">대여중</span>`;
-      return `<div style="width:33.333%;border-right:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0;box-sizing:border-box">
+      return `<div style="width:33.333%;box-sizing:border-box;border-right:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0">
         ${imgHtml}
         <div style="padding:7px 9px">
           <div style="font-weight:700;font-size:10.5px;margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${r.name}</div>
           <div style="display:flex;justify-content:space-between;font-size:9px;color:#64748b;margin-bottom:2px"><span style="color:#94a3b8">대여일</span><span>${r.rentDate || '-'}</span></div>
           <div style="display:flex;justify-content:space-between;font-size:9px;color:#64748b;margin-bottom:2px"><span style="color:#94a3b8">반납예정</span><span>${r.returnDate || '-'}</span></div>
           ${overdueHtml}
+        </div>
+      </div>`;
+    };
+
+    const chunksHtml = chunks.map((chunkItems, idx) => {
+      const pageBreak = idx > 0 ? 'page-break-before:always;' : '';
+      const pageLabel = chunks.length > 1 ? ` (${idx + 1}/${chunks.length})` : '';
+      return `<div style="${pageBreak}padding:14px 16px 16px">
+        <div style="background:#334155;color:white;padding:7px 14px;border-radius:6px 6px 0 0;display:flex;justify-content:space-between;align-items:center">
+          <span style="font-size:12px;font-weight:700">${displayName}${pageLabel}</span>
+          <span style="font-size:10px;opacity:.7">${phone ? phone + '  · ' : ''}총 ${items.length}건</span>
+        </div>
+        <div style="display:flex;flex-wrap:wrap;border:1px solid #e2e8f0;border-top:none;border-radius:0 0 6px 6px;overflow:hidden">
+          ${chunkItems.map(buildCard).join('')}
         </div>
       </div>`;
     }).join('');
@@ -889,15 +915,7 @@ async function makePDF() {
         </div>
         <div style="font-size:10px;opacity:.7">출력일: ${today}</div>
       </div>
-      <div style="padding:14px 16px">
-        <div style="background:#334155;color:white;padding:7px 14px;border-radius:6px 6px 0 0;display:flex;justify-content:space-between;align-items:center">
-          <span style="font-size:12px;font-weight:700">${displayName}</span>
-          <span style="font-size:10px;opacity:.7">${phone ? phone + '  · ' : ''}총 ${items.length}건</span>
-        </div>
-        <div style="display:flex;flex-wrap:wrap;border:1px solid #e2e8f0;border-top:none;border-radius:0 0 6px 6px;overflow:hidden">
-          ${cardsHtml}
-        </div>
-      </div>
+      ${chunksHtml}
     </div>`;
 
     const container = document.createElement('div');
@@ -905,7 +923,6 @@ async function makePDF() {
     container.innerHTML = html;
     document.body.appendChild(container);
 
-    // 이미지 로딩 대기 (최대 10초)
     await new Promise(resolve => {
       const imgs = container.querySelectorAll('img');
       if (!imgs.length) { resolve(); return; }
@@ -924,7 +941,8 @@ async function makePDF() {
       filename: `${safeFilename} 샘플북대여현황.pdf`,
       image: { type: 'jpeg', quality: 0.9 },
       html2canvas: { scale: 2, useCORS: true, logging: false },
-      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+      pagebreak: { mode: 'css' }
     }).from(container.firstElementChild).save();
 
     document.body.removeChild(container);
