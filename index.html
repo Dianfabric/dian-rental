@@ -130,6 +130,38 @@
     /* ── Content Area ── */
     #content { padding: 0 24px 40px; }
 
+    /* ── PDF 체크박스 & 버튼 ── */
+    .group-check {
+      width: 18px; height: 18px;
+      accent-color: #e94560;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+    #pdfToolbar {
+      display: none;
+      position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+      background: #1a1a2e; color: white;
+      padding: 12px 24px; border-radius: 40px;
+      box-shadow: 0 8px 32px rgba(0,0,0,.35);
+      align-items: center; gap: 16px;
+      z-index: 300; white-space: nowrap;
+    }
+    #pdfToolbar.show { display: flex; }
+    #pdfToolbar span { font-size: .85rem; opacity: .8; }
+    #pdfBtn {
+      background: #e94560; color: white;
+      border: none; border-radius: 20px;
+      padding: 8px 20px; font-size: .85rem;
+      font-weight: 700; cursor: pointer;
+    }
+    #pdfBtn:hover { background: #c73652; }
+    #clearSelBtn {
+      background: transparent; color: #94a3b8;
+      border: 1px solid #94a3b8; border-radius: 20px;
+      padding: 6px 14px; font-size: .8rem; cursor: pointer;
+    }
+    #clearSelBtn:hover { color: white; border-color: white; }
+
     /* ── Loading ── */
     #loading {
       text-align: center;
@@ -421,6 +453,13 @@
   <div id="empty" style="display:none;">조건에 맞는 샘플북이 없습니다.</div>
 </div>
 
+<!-- PDF 툴바 -->
+<div id="pdfToolbar">
+  <span id="pdfSelCount">0개 거래처 선택됨</span>
+  <button id="clearSelBtn" onclick="clearSelection()">선택 해제</button>
+  <button id="pdfBtn" onclick="makePDF()">📄 PDF 만들기</button>
+</div>
+
 <!-- Modal -->
 <div id="modal-overlay" onclick="closeModal(event)">
   <div id="modal">
@@ -689,29 +728,33 @@ function renderTable(records) {
 }
 
 // ── Group View (by client) ──
+let selectedClients = new Set();
+
 function renderGroup(records) {
   const byClient = {};
   records.forEach(r => {
     const key = r.clientName || '(거래처 없음)';
-    if (!byClient[key]) byClient[key] = { overdue: 0, rented: 0, items: [] };
+    if (!byClient[key]) byClient[key] = { overdue: 0, rented: 0, items: [], phone: r.clientPhone || '' };
     byClient[key].items.push(r);
     if (r.status === 'overdue') byClient[key].overdue++;
     else byClient[key].rented++;
   });
 
-  // 연체 있는 거래처 먼저, 그 다음 이름순
-  const sorted = Object.entries(byClient).sort(([,a],[,b]) => {
-    if (b.overdue !== a.overdue) return b.overdue - a.overdue;
-    return 0;
-  });
+  const sorted = Object.entries(byClient).sort(([,a],[,b]) => b.overdue - a.overdue);
 
   const groupView = document.getElementById('groupView');
-  groupView.innerHTML = sorted.map(([name, info]) => {
+  groupView.innerHTML = `
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;font-size:.85rem;color:var(--muted)">
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+        <input type="checkbox" class="group-check" id="checkAll" onchange="toggleAll(this.checked)">
+        전체 선택
+      </label>
+    </div>` +
+  sorted.map(([name, info]) => {
+    const isChecked = selectedClients.has(name) ? 'checked' : '';
     const headerClass = info.overdue > 0 ? 'group-header group-overdue' : 'group-header';
-    const countTag = `<span class="group-count">총 ${info.items.length}건</span>`;
     const overdueTag = info.overdue > 0
-      ? `<span class="group-count" style="background:rgba(255,255,255,.4)">🚨 연체 ${info.overdue}</span>`
-      : '';
+      ? `<span class="group-count" style="background:rgba(255,255,255,.4)">🚨 연체 ${info.overdue}</span>` : '';
 
     const cardsMini = info.items.map(r => {
       const thumb = r.thumbUrl
@@ -725,9 +768,11 @@ function renderGroup(records) {
     }).join('');
 
     return `<div class="group-section">
-      <div class="${headerClass}">
-        <span>📦 ${name}</span>
-        ${countTag}${overdueTag}
+      <div class="${headerClass}" style="gap:10px">
+        <input type="checkbox" class="group-check" data-client="${name}" ${isChecked} onchange="toggleClient('${name}', this.checked)">
+        <span style="flex:1">📦 ${name}</span>
+        <span class="group-count">총 ${info.items.length}건</span>
+        ${overdueTag}
       </div>
       <div style="display:flex;flex-wrap:wrap;gap:10px;padding:4px 2px;">
         ${cardsMini}
@@ -736,6 +781,133 @@ function renderGroup(records) {
   }).join('');
 
   groupView.style.display = 'block';
+  updatePdfToolbar();
+}
+
+function toggleClient(name, checked) {
+  if (checked) selectedClients.add(name);
+  else selectedClients.delete(name);
+  updatePdfToolbar();
+}
+
+function toggleAll(checked) {
+  document.querySelectorAll('[data-client]').forEach(cb => {
+    cb.checked = checked;
+    if (checked) selectedClients.add(cb.dataset.client);
+    else selectedClients.delete(cb.dataset.client);
+  });
+  updatePdfToolbar();
+}
+
+function clearSelection() {
+  selectedClients.clear();
+  document.querySelectorAll('[data-client]').forEach(cb => cb.checked = false);
+  const checkAll = document.getElementById('checkAll');
+  if (checkAll) checkAll.checked = false;
+  updatePdfToolbar();
+}
+
+function updatePdfToolbar() {
+  const toolbar = document.getElementById('pdfToolbar');
+  const count = selectedClients.size;
+  document.getElementById('pdfSelCount').textContent = `${count}개 거래처 선택됨`;
+  toolbar.classList.toggle('show', count > 0);
+}
+
+// ── PDF 생성 ──
+function makePDF() {
+  const clients = [...selectedClients];
+  if (!clients.length) return;
+
+  // 선택된 거래처 데이터 수집
+  const sections = clients.map(cname => {
+    const items = allRecords
+      .filter(r => (r.clientName || '(거래처 없음)') === cname)
+      .sort((a, b) => (a.rentDate || '').localeCompare(b.rentDate || ''));
+    const phone = items[0]?.clientPhone || '';
+    return { cname, phone, items };
+  });
+
+  const rows = sections.map(({ cname, phone, items }) => {
+    const tableRows = items.map(r => `
+      <tr>
+        <td class="img-cell">
+          ${r.thumbUrl ? `<img src="${r.thumbUrl}" onerror="this.style.display='none'">` : '<div class="no-img">📘</div>'}
+        </td>
+        <td>
+          <div class="item-name">${r.name}</div>
+          <div class="item-brand">${r.brand}${r.type ? ' · ' + r.type : ''}</div>
+        </td>
+        <td>${r.rentDate || '-'}</td>
+        <td>${r.returnDate || '-'}</td>
+        <td class="${r.overdueDays > 0 ? 'overdue' : ''}">
+          ${r.overdueDays > 0 ? '+' + r.overdueDays + '일' : r.status === 'rented' ? '대여중' : '-'}
+        </td>
+      </tr>`).join('');
+
+    return `
+      <div class="client-section">
+        <div class="client-header">
+          <span class="client-name">📦 ${cname}</span>
+          <span class="client-meta">${phone ? '📞 ' + phone + ' · ' : ''}총 ${items.length}건</span>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th style="width:70px">이미지</th>
+              <th>원단명</th>
+              <th style="width:90px">대여일</th>
+              <th style="width:95px">반납예정일</th>
+              <th style="width:70px">연체</th>
+            </tr>
+          </thead>
+          <tbody>${tableRows}</tbody>
+        </table>
+      </div>`;
+  }).join('');
+
+  const today = new Date().toLocaleDateString('ko-KR');
+  const win = window.open('', '_blank');
+  win.document.write(`<!DOCTYPE html>
+<html lang="ko"><head>
+<meta charset="UTF-8">
+<title>DIAN 샘플북 대여현황</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: "Malgun Gothic", "Apple SD Gothic Neo", sans-serif; font-size: 11px; color: #1e293b; padding: 20px; }
+  h1 { font-size: 16px; font-weight: 800; margin-bottom: 2px; }
+  .subtitle { font-size: 10px; color: #64748b; margin-bottom: 20px; }
+  .client-section { margin-bottom: 24px; page-break-inside: avoid; }
+  .client-header {
+    background: #1a1a2e; color: white;
+    padding: 8px 14px; border-radius: 8px 8px 0 0;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .client-name { font-size: 12px; font-weight: 700; }
+  .client-meta { font-size: 10px; opacity: .7; }
+  table { width: 100%; border-collapse: collapse; border: 1px solid #e2e8f0; border-top: none; }
+  th { background: #f1f5f9; padding: 7px 10px; text-align: left; font-size: 10px; font-weight: 700; border-bottom: 1px solid #e2e8f0; }
+  td { padding: 8px 10px; border-bottom: 1px solid #f1f5f9; vertical-align: middle; }
+  tr:last-child td { border-bottom: none; }
+  tr:nth-child(even) td { background: #fafafa; }
+  .img-cell { width: 70px; }
+  .img-cell img { width: 56px; height: 72px; object-fit: cover; border-radius: 4px; display: block; }
+  .no-img { width: 56px; height: 72px; background: #e9ecef; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 18px; }
+  .item-name { font-weight: 700; font-size: 11px; }
+  .item-brand { font-size: 10px; color: #64748b; margin-top: 2px; }
+  .overdue { color: #c5221f; font-weight: 700; }
+  @media print {
+    body { padding: 10px; }
+    @page { margin: 15mm; size: A4; }
+  }
+</style>
+</head><body>
+  <h1>📚 DIAN 샘플북 대여현황</h1>
+  <div class="subtitle">출력일: ${today} · ${clients.length}개 거래처 · ${sections.reduce((s,g)=>s+g.items.length,0)}개 샘플북</div>
+  ${rows}
+  <script>window.onload = () => { window.print(); }<\/script>
+</body></html>`);
+  win.document.close();
 }
 
 // ── Modal ──
