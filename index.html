@@ -819,7 +819,6 @@ function makePDF() {
   const clients = [...selectedClients];
   if (!clients.length) return;
 
-  // 선택된 거래처 데이터 수집
   const sections = clients.map(cname => {
     const items = allRecords
       .filter(r => (r.clientName || '(거래처 없음)') === cname)
@@ -828,45 +827,39 @@ function makePDF() {
     return { cname, phone, items };
   });
 
-  const rows = sections.map(({ cname, phone, items }) => {
-    const tableRows = items.map(r => `
-      <tr>
-        <td class="img-cell">
-          ${r.thumbUrl ? `<img src="${r.thumbUrl}" onerror="this.style.display='none'">` : '<div class="no-img">📘</div>'}
-        </td>
-        <td>
-          <div class="item-name">${r.name}</div>
-          <div class="item-brand">${r.brand}${r.type ? ' · ' + r.type : ''}</div>
-        </td>
-        <td>${r.rentDate || '-'}</td>
-        <td>${r.returnDate || '-'}</td>
-        <td class="${r.overdueDays > 0 ? 'overdue' : ''}">
-          ${r.overdueDays > 0 ? '+' + r.overdueDays + '일' : r.status === 'rented' ? '대여중' : '-'}
-        </td>
-      </tr>`).join('');
+  const sectionsHtml = sections.map(({ cname, phone, items }) => {
+    const cardsHtml = items.map(r => {
+      const imgHtml = r.thumbUrl
+        ? `<img src="${r.thumbUrl}" onerror="this.parentNode.innerHTML='<div class=no-img>📘</div>'">`
+        : `<div class="no-img">📘</div>`;
+      const overdueHtml = r.overdueDays > 0
+        ? `<div class="overdue-tag">+${r.overdueDays}일 연체</div>`
+        : `<div class="rented-tag">대여중</div>`;
+      return `
+        <div class="card">
+          <div class="card-img">${imgHtml}</div>
+          <div class="card-info">
+            <div class="item-name">${r.name}</div>
+            <div class="info-row"><span class="lbl">대여일</span><span>${r.rentDate || '-'}</span></div>
+            <div class="info-row"><span class="lbl">반납예정</span><span>${r.returnDate || '-'}</span></div>
+            ${overdueHtml}
+          </div>
+        </div>`;
+    }).join('');
 
     return `
       <div class="client-section">
         <div class="client-header">
           <span class="client-name">📦 ${cname}</span>
-          <span class="client-meta">${phone ? '📞 ' + phone + ' · ' : ''}총 ${items.length}건</span>
+          <span class="client-meta">${phone ? '📞 ' + phone + '  ·  ' : ''}총 ${items.length}건</span>
         </div>
-        <table>
-          <thead>
-            <tr>
-              <th style="width:70px">이미지</th>
-              <th>원단명</th>
-              <th style="width:90px">대여일</th>
-              <th style="width:95px">반납예정일</th>
-              <th style="width:70px">연체</th>
-            </tr>
-          </thead>
-          <tbody>${tableRows}</tbody>
-        </table>
+        <div class="card-grid">${cardsHtml}</div>
       </div>`;
   }).join('');
 
   const today = new Date().toLocaleDateString('ko-KR');
+  const totalItems = sections.reduce((s, g) => s + g.items.length, 0);
+
   const win = window.open('', '_blank');
   win.document.write(`<!DOCTYPE html>
 <html lang="ko"><head>
@@ -874,37 +867,109 @@ function makePDF() {
 <title>DIAN 샘플북 대여현황</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: "Malgun Gothic", "Apple SD Gothic Neo", sans-serif; font-size: 11px; color: #1e293b; padding: 20px; }
-  h1 { font-size: 16px; font-weight: 800; margin-bottom: 2px; }
-  .subtitle { font-size: 10px; color: #64748b; margin-bottom: 20px; }
-  .client-section { margin-bottom: 24px; page-break-inside: avoid; }
-  .client-header {
+  body {
+    font-family: "Malgun Gothic", "Apple SD Gothic Neo", sans-serif;
+    font-size: 11px; color: #1e293b;
+    background: white;
+  }
+  .page-header {
     background: #1a1a2e; color: white;
-    padding: 8px 14px; border-radius: 8px 8px 0 0;
+    padding: 12px 20px;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .page-header h1 { font-size: 15px; font-weight: 800; }
+  .page-header p { font-size: 10px; opacity: .65; margin-top: 2px; }
+  .page-header .meta { font-size: 10px; opacity: .7; text-align: right; }
+
+  .body { padding: 14px 16px; }
+
+  .client-section {
+    margin-bottom: 20px;
+    page-break-inside: avoid;
+  }
+  .client-header {
+    background: #334155; color: white;
+    padding: 7px 14px; border-radius: 6px 6px 0 0;
     display: flex; justify-content: space-between; align-items: center;
   }
   .client-name { font-size: 12px; font-weight: 700; }
   .client-meta { font-size: 10px; opacity: .7; }
-  table { width: 100%; border-collapse: collapse; border: 1px solid #e2e8f0; border-top: none; }
-  th { background: #f1f5f9; padding: 7px 10px; text-align: left; font-size: 10px; font-weight: 700; border-bottom: 1px solid #e2e8f0; }
-  td { padding: 8px 10px; border-bottom: 1px solid #f1f5f9; vertical-align: middle; }
-  tr:last-child td { border-bottom: none; }
-  tr:nth-child(even) td { background: #fafafa; }
-  .img-cell { width: 70px; }
-  .img-cell img { width: 56px; height: 72px; object-fit: cover; border-radius: 4px; display: block; }
-  .no-img { width: 56px; height: 72px; background: #e9ecef; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 18px; }
-  .item-name { font-weight: 700; font-size: 11px; }
-  .item-brand { font-size: 10px; color: #64748b; margin-top: 2px; }
-  .overdue { color: #c5221f; font-weight: 700; }
+
+  .card-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0;
+    border: 1px solid #e2e8f0;
+    border-top: none;
+    border-radius: 0 0 6px 6px;
+    overflow: hidden;
+  }
+  .card {
+    border-right: 1px solid #e2e8f0;
+    border-bottom: 1px solid #e2e8f0;
+  }
+  .card:nth-child(3n) { border-right: none; }
+
+  .card-img {
+    width: 100%;
+    aspect-ratio: 3/4;
+    overflow: hidden;
+    background: #f1f5f9;
+  }
+  .card-img img {
+    width: 100%; height: 100%;
+    object-fit: cover; display: block;
+  }
+  .no-img {
+    width: 100%; height: 100%;
+    display: flex; align-items: center;
+    justify-content: center; font-size: 28px;
+    color: #94a3b8;
+  }
+  .card-info { padding: 8px 10px; }
+  .item-name {
+    font-weight: 700; font-size: 11px;
+    margin-bottom: 5px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .info-row {
+    display: flex; justify-content: space-between;
+    font-size: 9.5px; color: #475569;
+    margin-bottom: 2px;
+  }
+  .lbl { color: #94a3b8; }
+  .overdue-tag {
+    margin-top: 5px;
+    background: #fce8e6; color: #c5221f;
+    padding: 2px 7px; border-radius: 4px;
+    font-size: 9px; font-weight: 700;
+    display: inline-block;
+  }
+  .rented-tag {
+    margin-top: 5px;
+    background: #fee2e2; color: #991b1b;
+    padding: 2px 7px; border-radius: 4px;
+    font-size: 9px; font-weight: 600;
+    display: inline-block;
+  }
+
   @media print {
-    body { padding: 10px; }
-    @page { margin: 15mm; size: A4; }
+    @page { margin: 8mm; size: A4; }
+    body { background: white; }
   }
 </style>
-</head><body>
-  <h1>📚 DIAN 샘플북 대여현황</h1>
-  <div class="subtitle">출력일: ${today} · ${clients.length}개 거래처 · ${sections.reduce((s,g)=>s+g.items.length,0)}개 샘플북</div>
-  ${rows}
+</head>
+<body>
+  <div class="page-header">
+    <div>
+      <h1>📚 DIAN 샘플북 대여현황</h1>
+      <p>${sections.length}개 거래처 · ${totalItems}개 샘플북</p>
+    </div>
+    <div class="meta">출력일: ${today}</div>
+  </div>
+  <div class="body">
+    ${sectionsHtml}
+  </div>
   <script>window.onload = () => { window.print(); }<\/script>
 </body></html>`);
   win.document.close();
