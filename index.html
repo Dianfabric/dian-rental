@@ -430,7 +430,6 @@
 </div>
 
 <script>
-const BASE  = 'appcr2VDa4y17bcwm';
 const SAMPLE_TABLE = 'tbleNmiEGITKO6knr';
 const CLIENT_TABLE = 'tblSCHwKL8RQXSJKS';
 const TODAY = new Date(); TODAY.setHours(0,0,0,0);
@@ -438,26 +437,16 @@ const TODAY = new Date(); TODAY.setHours(0,0,0,0);
 let allRecords = [];
 let currentView = 'card';
 
-// ── Token 관리 ──
-function getToken() { return localStorage.getItem('dian_at'); }
-function promptToken() {
-  const t = prompt('🔑 Airtable 토큰을 입력하세요\n(한 번만 입력하면 저장됩니다)');
-  if (t && t.trim()) { localStorage.setItem('dian_at', t.trim()); return t.trim(); }
-  return null;
-}
-function TOKEN() { return getToken() || promptToken(); }
-
-// ── Airtable API ──
+// ── Airtable API (토큰은 서버에서 처리) ──
 async function fetchAll(tableId, filter = '', fields = []) {
   let records = [];
   let offset = null;
-  const fieldParams = fields.map(f => `fields[]=${encodeURIComponent(f)}`).join('&');
-  const filterParam = filter ? `filterByFormula=${encodeURIComponent(filter)}` : '';
   do {
-    const params = [fieldParams, filterParam, offset ? `offset=${offset}` : '', 'pageSize=100'].filter(Boolean).join('&');
-    const res = await fetch(`https://api.airtable.com/v0/${BASE}/${tableId}?${params}`, {
-      headers: { Authorization: `Bearer ${TOKEN()}` }
-    });
+    const params = new URLSearchParams({ tableId });
+    if (filter) params.set('filter', filter);
+    if (fields.length) params.set('fields', fields.join(','));
+    if (offset) params.set('offset', offset);
+    const res = await fetch(`/api/airtable?${params}`);
     if (!res.ok) throw new Error(`API Error: ${res.status}`);
     const data = await res.json();
     records = records.concat(data.records);
