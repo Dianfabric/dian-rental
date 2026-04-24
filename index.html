@@ -885,6 +885,13 @@ async function makePDF() {
   const originalHTML = btn.innerHTML;
   const today = new Date().toLocaleDateString('ko-KR');
 
+  // A4(297mm) - 여백 16mm = 281mm. 794px 기준 비율 → 1페이지 = 1150px
+  // 헤더 56px + 패딩+클라이언트바 62px = ~120px 오버헤드
+  // 3행 × (IMG_H + 카드정보~95px) + 120 ≤ 1150 → IMG_H ≤ 228px
+  // 안전 마진 포함 200px 고정
+  const CARDS_PER_PAGE = 9;
+  const IMG_H = 200;
+
   for (let i = 0; i < clients.length; i++) {
     const cname = clients[i];
     btn.innerHTML = `⏳ ${i + 1}/${clients.length} 생성 중...`;
@@ -895,10 +902,11 @@ async function makePDF() {
     const phone = items[0]?.clientPhone || '';
     const displayName = addNim(cname);
 
-    // 아이템 수에 따라 이미지 높이 자동 계산 → 무조건 1페이지
-    // A4 여백 8mm: 페이지 컨텐츠 1149px, 오버헤드 115px, 카드 정보 74px
-    const rows = Math.ceil(items.length / 3);
-    const IMG_H = Math.max(60, Math.floor(1034 / rows * 0.93) - 74);
+    // 9개씩 페이지 분리
+    const chunks = [];
+    for (let j = 0; j < items.length; j += CARDS_PER_PAGE) {
+      chunks.push(items.slice(j, j + CARDS_PER_PAGE));
+    }
 
     const buildCard = r => {
       const imgHtml = r.thumbUrl
@@ -918,27 +926,34 @@ async function makePDF() {
       </div>`;
     };
 
-    const html = `<div style="font-family:'Malgun Gothic','Apple SD Gothic Neo',sans-serif;color:#1e293b;background:white;width:794px">
-      <div style="background:#1a1a2e;color:white;padding:12px 20px;display:flex;justify-content:space-between;align-items:center">
-        <div>
-          <div style="font-size:15px;font-weight:800">DIAN 샘플북 대여현황</div>
-          <div style="font-size:10px;opacity:.65;margin-top:2px">${items.length}개 샘플북</div>
-        </div>
-        <div style="font-size:10px;opacity:.7">출력일: ${today}</div>
-      </div>
-      <div style="padding:14px 16px 16px">
+    const chunksHtml = chunks.map((ch, idx) => {
+      const brk = idx > 0 ? 'page-break-before:always;' : '';
+      const lbl = chunks.length > 1 ? ` (${idx + 1}/${chunks.length})` : '';
+      return `<div style="${brk}padding:14px 16px 16px">
         <div style="background:#334155;color:white;padding:7px 14px;border-radius:6px 6px 0 0;display:flex;justify-content:space-between;align-items:center">
-          <span style="font-size:12px;font-weight:700">${displayName}</span>
+          <span style="font-size:12px;font-weight:700">${displayName}${lbl}</span>
           <span style="font-size:10px;opacity:.7">${phone ? phone + '  · ' : ''}총 ${items.length}건</span>
         </div>
         <div style="display:flex;flex-wrap:wrap;border:1px solid #e2e8f0;border-top:none;border-radius:0 0 6px 6px;overflow:hidden">
-          ${items.map(buildCard).join('')}
+          ${ch.map(buildCard).join('')}
         </div>
+      </div>`;
+    }).join('');
+
+    const html = `<div style="font-family:'Malgun Gothic','Apple SD Gothic Neo',sans-serif;line-height:1.3;color:#1e293b;background:white;width:794px">
+      <div style="background:#1a1a2e;color:white;padding:10px 20px;display:flex;justify-content:space-between;align-items:center">
+        <div>
+          <div style="font-size:14px;font-weight:800">DIAN 샘플북 대여현황</div>
+          <div style="font-size:9px;opacity:.65;margin-top:1px">${items.length}개 샘플북</div>
+        </div>
+        <div style="font-size:9px;opacity:.7">출력일: ${today}</div>
       </div>
+      ${chunksHtml}
     </div>`;
 
     const container = document.createElement('div');
-    container.style.cssText = 'position:fixed;left:-9999px;top:0;background:white;z-index:-1';
+    // 794px 명시 고정 — html2pdf A4 너비 계산 기준
+    container.style.cssText = 'position:fixed;left:-9999px;top:0;width:794px;background:white;z-index:-1';
     container.innerHTML = html;
     document.body.appendChild(container);
 
@@ -960,7 +975,8 @@ async function makePDF() {
       filename: `${safeFilename} 샘플북대여현황.pdf`,
       image: { type: 'jpeg', quality: 0.9 },
       html2canvas: { scale: 2, useCORS: true, logging: false },
-      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+      pagebreak: { mode: 'css' }
     }).from(container.firstElementChild).save();
 
     document.body.removeChild(container);
