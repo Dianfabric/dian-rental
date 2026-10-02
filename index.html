@@ -924,7 +924,7 @@ function cardDateBoxes(r) {
 }
 
 // ── PDF 생성 (거래처별 개별 파일, 3×3=9장씩 페이지 분리) ──
-async function makePDF(list) {
+async function makePDF(list, only) {
   const clients = list || [...selectedClients];
   if (!clients.length) return;
 
@@ -945,7 +945,7 @@ async function makePDF(list) {
     btn.innerHTML = `⏳ ${i + 1}/${clients.length} 생성 중...`;
 
     const items = allRecords
-      .filter(r => (r.clientName || '(거래처 없음)') === cname)
+      .filter(r => (r.clientName || '(거래처 없음)') === cname && (!only || only.has(r.id)))
       .sort((a, b) => (a.rentDate || '').localeCompare(b.rentDate || ''));
     const phone = items[0]?.clientPhone || '';
     const displayName = addNim(cname);
@@ -1030,7 +1030,7 @@ async function makePDF(list) {
 }
 
 // ── JPG 생성 (거래처별, 9장씩 개별 파일) ──
-async function makeJPG(list) {
+async function makeJPG(list, only) {
   const clients = list || [...selectedClients];
   if (!clients.length) return;
 
@@ -1047,7 +1047,7 @@ async function makeJPG(list) {
     btn.innerHTML = `⏳ ${i + 1}/${clients.length} 생성 중...`;
 
     const items = allRecords
-      .filter(r => (r.clientName || '(거래처 없음)') === cname)
+      .filter(r => (r.clientName || '(거래처 없음)') === cname && (!only || only.has(r.id)))
       .sort((a, b) => (a.rentDate || '').localeCompare(b.rentDate || ''));
     const phone = items[0]?.clientPhone || '';
     const displayName = addNim(cname);
@@ -1136,39 +1136,54 @@ function escHTML(s) {
   return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
-function noticeMessage(name, items) {
+// 기준: 지난달 1일. 그 전 대여분만 목록에 넣고, 지난달 이후 대여분은 "반납 일정 체크" 한 줄로만 안내
+function noticeCutoff() {
+  const d = new Date(TODAY.getFullYear(), TODAY.getMonth() - 1, 1);
+  const date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
+  const thisMonth = `${TODAY.getFullYear()}-${String(TODAY.getMonth() + 1).padStart(2, '0')}`;
+  return { date, month: d.getMonth() + 1, thisMonth };
+}
+
+function noticeMessage(name, items, recent) {
   const md = d => d ? d.slice(5).replace('-', '/') : '-';
-  return [
+  const { month, thisMonth } = noticeCutoff();
+  const lines = [
     `안녕하세요 ${addNim(name)}, 디안패브릭입니다.`,
-    `대여해 가신 샘플북 ${items.length}권의 반납 기한(대여 후 7일)이 지나 안내드립니다.`,
-    '',
+    `대여해 가신 샘플북 중 아래 ${items.length}권이 반납 기한(대여 후 7일)이 많이 지나 연락드립니다.`,
     ...items.map(r => `- ${r.name} (${md(r.rentDate)} 대여)`),
-    '',
-    '첨부 사진 확인하시고 편하실 때 반납 부탁드립니다.',
-    '계속 사용이 필요하시거나 이미 반납하셨다면 회신 주시면 확인하겠습니다.',
-    '감사합니다.',
-  ].join('\n');
+    '반납 일정 확인 부탁드립니다.',
+  ];
+  if (recent.length) {
+    const when = recent.some(r => (r.rentDate || '').startsWith(thisMonth)) ? `${month}월 이후에` : `${month}월에`;
+    lines.push(`${when} 대여해 가신 샘플북도 반납 기한에 맞게 반납 일정 체크 부탁드립니다.`);
+  }
+  lines.push('계속 사용이 필요하시거나 이미 반납하셨다면 회신 주시면 확인하겠습니다.', '감사합니다.');
+  return lines.join('\n');
 }
 
 function renderNotice(records) {
-  // 필터에 걸린 연체 건의 거래처를 고른 뒤, 그 거래처의 연체 건 전체로 문자를 만든다
-  const clients = new Set(records.filter(r => r.status === 'overdue').map(r => r.clientName || '(거래처 없음)'));
+  // 필터에 걸린 연체 건의 거래처를 고른 뒤, 기준일 이전 연체분으로 문자를 만든다
+  const cutoff = noticeCutoff().date;
+  const isOld = r => r.status === 'overdue' && r.clientName && (r.rentDate || '') < cutoff;
+  const clients = new Set(records.filter(isOld).map(r => r.clientName));
   const byClient = {};
-  allRecords.filter(r => r.status === 'overdue' && clients.has(r.clientName || '(거래처 없음)')).forEach(r => {
-    const key = r.clientName || '(거래처 없음)';
-    (byClient[key] = byClient[key] || []).push(r);
+  allRecords.filter(r => isOld(r) && clients.has(r.clientName)).forEach(r => {
+    (byClient[r.clientName] = byClient[r.clientName] || []).push(r);
   });
   noticeGroups = Object.entries(byClient).map(([name, items]) => {
     items.sort((a, b) => (a.rentDate || '').localeCompare(b.rentDate || '') || a.name.localeCompare(b.name));
+    const recent = allRecords.filter(r => r.clientName === name && r.status !== 'available' && (r.rentDate || '') >= cutoff);
     const mgrCount = {};
     items.forEach(r => { if (r.manager) mgrCount[r.manager] = (mgrCount[r.manager] || 0) + 1; });
     return {
       name, items,
+      ids: new Set(items.map(r => r.id)),
+      recentCount: recent.length,
       phone: items.find(r => r.clientPhone)?.clientPhone || '',
       managers: Object.entries(mgrCount).sort(([,a],[,b]) => b - a).map(([m]) => m),
       oldest: items[0].rentDate || '',
       maxOd: Math.max(...items.map(r => r.overdueDays)),
-      msg: noticeMessage(name, items),
+      msg: noticeMessage(name, items, recent),
     };
   }).sort((a, b) => a.oldest.localeCompare(b.oldest));
 
@@ -1179,7 +1194,7 @@ function renderNotice(records) {
   const view = document.getElementById('noticeView');
   view.innerHTML = `
     <div class="notice-bar">
-      <span>연체 거래처 <b>${noticeGroups.length}</b>곳 · 대여일 오래된 순 · 보냄 ${sentCount}곳</span>
+      <span>${noticeCutoff().month}월 이전 대여 연체 거래처 <b>${noticeGroups.length}</b>곳 · 대여일 오래된 순 · 보냄 ${sentCount}곳</span>
       <label><input type="checkbox" id="noticeHideSent" ${hideSent ? 'checked' : ''} onchange="renderView()"> 보낸 거래처 숨기기</label>
     </div>` +
   noticeGroups.map((g, i) => {
@@ -1198,7 +1213,7 @@ function renderNotice(records) {
         <span class="notice-no">${String(i + 1).padStart(2, '0')}</span>
         <span class="notice-name">${escHTML(addNim(g.name))}</span>
         ${phone}
-        <span class="notice-meta">${g.items.length}권 · 가장 오래된 대여 ${escHTML(g.oldest)} · ${escHTML(g.managers.join(', ') || '담당자 미지정')}</span>
+        <span class="notice-meta">${g.items.length}권${g.recentCount ? ` (+${noticeCutoff().month}월 이후 ${g.recentCount}권)` : ''} · 가장 오래된 대여 ${escHTML(g.oldest)} · ${escHTML(g.managers.join(', ') || '담당자 미지정')}</span>
         <span class="notice-od">최장 ${g.maxOd}일 연체</span>
         <label class="notice-sent"><input type="checkbox" ${sent ? 'checked' : ''} onchange="noticeMarkSent(${i}, this.checked, '${today}')"> ${sent ? `보냄 ${sent.slice(5).replace('-', '/')}` : '보냄'}</label>
       </div>
@@ -1236,9 +1251,9 @@ async function noticeFile(btn, i, kind) {
   const label = btn.textContent;
   btn.disabled = true; btn.textContent = '⏳ 만드는 중...';
   try {
-    // 기존 JPG/PDF 생성 로직 재사용 (해당 거래처의 대여 건 전체를 담음)
-    if (kind === 'jpg') await makeJPG([noticeGroups[i].name]);
-    else await makePDF([noticeGroups[i].name]);
+    // 기존 JPG/PDF 생성 로직 재사용 (문자에 적힌 기준일 이전 연체분만 담음)
+    if (kind === 'jpg') await makeJPG([noticeGroups[i].name], noticeGroups[i].ids);
+    else await makePDF([noticeGroups[i].name], noticeGroups[i].ids);
   } finally {
     btn.disabled = false; btn.textContent = label;
   }
