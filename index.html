@@ -376,6 +376,32 @@
     #modal .row:last-child { border-bottom: none; }
     #modal .row label { color: var(--muted); }
     #modal .row span { font-weight: 600; }
+
+    /* ── 반납 안내 ── */
+    .notice-bar { display:flex; flex-wrap:wrap; gap:10px 16px; align-items:center; margin-bottom:12px; font-size:.85rem; color:var(--muted); }
+    .notice-bar label { display:flex; align-items:center; gap:6px; cursor:pointer; }
+    .notice-card { background:var(--card); border:1px solid var(--border); border-radius:10px; padding:14px 16px; margin-bottom:12px; display:grid; grid-template-columns:minmax(0,1.1fr) minmax(0,1fr); gap:14px; box-shadow:0 1px 3px rgba(0,0,0,.05); }
+    .notice-card.sent { opacity:.5; }
+    .notice-head { grid-column:1/-1; display:flex; flex-wrap:wrap; align-items:center; gap:6px 12px; }
+    .notice-no { font-size:.75rem; color:var(--muted); font-variant-numeric:tabular-nums; }
+    .notice-name { font-weight:700; font-size:1rem; }
+    .notice-phone { font-variant-numeric:tabular-nums; font-weight:600; user-select:all; }
+    .notice-nophone { color:var(--red); font-size:.8rem; }
+    .notice-meta { font-size:.8rem; color:var(--muted); }
+    .notice-od { background:#fce8e6; color:#c5221f; padding:2px 8px; border-radius:999px; font-size:.75rem; font-weight:700; }
+    .notice-sent { margin-left:auto; display:flex; align-items:center; gap:6px; font-size:.8rem; color:var(--muted); cursor:pointer; }
+    .notice-msg { min-width:0; }
+    .notice-msg textarea { width:100%; min-height:230px; resize:vertical; padding:10px 12px; border:1px solid var(--border); border-radius:8px; font:inherit; font-size:.85rem; line-height:1.55; color:var(--text); background:#fafbfc; }
+    .notice-actions { display:flex; flex-wrap:wrap; gap:6px; margin-top:6px; }
+    .nbtn { padding:6px 12px; border:1px solid var(--border); border-radius:6px; background:var(--card); font-size:.8rem; cursor:pointer; color:var(--text); text-decoration:none; }
+    .nbtn:hover { border-color:var(--primary); }
+    .nbtn.primary { background:var(--primary); color:#fff; border-color:var(--primary); }
+    .nbtn:disabled { opacity:.5; cursor:default; }
+    .notice-thumbs { display:flex; flex-wrap:wrap; gap:8px; align-content:flex-start; min-width:0; }
+    .notice-thumbs > div { width:64px; text-align:center; cursor:pointer; }
+    .notice-thumbs img, .notice-thumbs .ph { width:64px; height:84px; object-fit:cover; border-radius:6px; display:block; background:#e9ecef; }
+    .notice-thumbs span { display:block; font-size:.62rem; margin-top:3px; word-break:break-all; }
+    @media (max-width: 760px) { .notice-card { grid-template-columns:minmax(0,1fr); } }
   </style>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
@@ -432,6 +458,7 @@
   <button class="view-btn active" onclick="setView('card')">카드</button>
   <button class="view-btn" onclick="setView('table')">테이블</button>
   <button class="view-btn" onclick="setView('group')">거래처별</button>
+  <button class="view-btn" onclick="setView('notice')">반납 안내</button>
 </div>
 
 <div id="content">
@@ -460,6 +487,7 @@
     </table>
   </div>
   <div id="groupView" style="display:none;"></div>
+  <div id="noticeView" style="display:none;"></div>
   <div id="empty" style="display:none;">조건에 맞는 샘플북이 없습니다.</div>
 </div>
 
@@ -509,7 +537,7 @@ async function fetchAll(tableId, filter = '', fields = []) {
 async function loadData() {
   document.getElementById('refreshBtn').disabled = true;
   document.getElementById('loading').style.display = 'block';
-  ['cardGrid','tableWrap','groupView','empty'].forEach(id => document.getElementById(id).style.display = 'none');
+  ['cardGrid','tableWrap','groupView','noticeView','empty'].forEach(id => document.getElementById(id).style.display = 'none');
 
   try {
     // 대여중 + 연체 샘플북 전체 조회 (대여 일 있는 것들)
@@ -652,7 +680,7 @@ function getFiltered() {
 function setView(v) {
   currentView = v;
   document.querySelectorAll('.view-btn').forEach((btn, i) => {
-    btn.classList.toggle('active', ['card','table','group'][i] === v);
+    btn.classList.toggle('active', ['card','table','group','notice'][i] === v);
   });
   renderView();
 }
@@ -660,7 +688,7 @@ function setView(v) {
 function renderView() {
   const records = getFiltered();
   document.getElementById('totalCount').textContent = `(${records.length}건)`;
-  ['cardGrid','tableWrap','groupView','empty'].forEach(id => document.getElementById(id).style.display = 'none');
+  ['cardGrid','tableWrap','groupView','noticeView','empty'].forEach(id => document.getElementById(id).style.display = 'none');
 
   if (records.length === 0) {
     document.getElementById('empty').style.display = 'block';
@@ -670,6 +698,7 @@ function renderView() {
   if (currentView === 'card')  renderCards(records);
   if (currentView === 'table') renderTable(records);
   if (currentView === 'group') renderGroup(records);
+  if (currentView === 'notice') renderNotice(records);
 }
 
 // ── Card View ──
@@ -886,8 +915,8 @@ function addNim(name) {
 }
 
 // ── PDF 생성 (거래처별 개별 파일, 3×3=9장씩 페이지 분리) ──
-async function makePDF() {
-  const clients = [...selectedClients];
+async function makePDF(list) {
+  const clients = list || [...selectedClients];
   if (!clients.length) return;
 
   const btn = document.getElementById('pdfBtn');
@@ -997,8 +1026,8 @@ async function makePDF() {
 }
 
 // ── JPG 생성 (거래처별, 9장씩 개별 파일) ──
-async function makeJPG() {
-  const clients = [...selectedClients];
+async function makeJPG(list) {
+  const clients = list || [...selectedClients];
   if (!clients.length) return;
 
   const btn = document.getElementById('jpgBtn');
@@ -1096,6 +1125,124 @@ async function makeJPG() {
 
   btn.disabled = false; pdfBtn.disabled = false;
   btn.innerHTML = originalHTML;
+}
+
+// ── 반납 안내 (연체 거래처별 문자 + 사진) ──
+let noticeGroups = [];
+let noticeSent = {};
+try { noticeSent = JSON.parse(localStorage.getItem('noticeSent') || '{}'); } catch {}
+function saveNoticeSent() { try { localStorage.setItem('noticeSent', JSON.stringify(noticeSent)); } catch {} }
+
+function escHTML(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function noticeMessage(name, items) {
+  const md = d => d ? d.slice(5).replace('-', '/') : '-';
+  return [
+    `안녕하세요 ${addNim(name)}, 디안패브릭입니다.`,
+    `대여해 가신 샘플북 ${items.length}권의 반납 기한(대여 후 7일)이 지나 안내드립니다.`,
+    '',
+    ...items.map(r => `- ${r.name} (${md(r.rentDate)} 대여)`),
+    '',
+    '첨부 사진 확인하시고 편하실 때 반납 부탁드립니다.',
+    '계속 사용이 필요하시거나 이미 반납하셨다면 회신 주시면 확인하겠습니다.',
+    '감사합니다.',
+  ].join('\n');
+}
+
+function renderNotice(records) {
+  // 필터에 걸린 연체 건의 거래처를 고른 뒤, 그 거래처의 연체 건 전체로 문자를 만든다
+  const clients = new Set(records.filter(r => r.status === 'overdue').map(r => r.clientName || '(거래처 없음)'));
+  const byClient = {};
+  allRecords.filter(r => r.status === 'overdue' && clients.has(r.clientName || '(거래처 없음)')).forEach(r => {
+    const key = r.clientName || '(거래처 없음)';
+    (byClient[key] = byClient[key] || []).push(r);
+  });
+  noticeGroups = Object.entries(byClient).map(([name, items]) => {
+    items.sort((a, b) => (a.rentDate || '').localeCompare(b.rentDate || '') || a.name.localeCompare(b.name));
+    const mgrCount = {};
+    items.forEach(r => { if (r.manager) mgrCount[r.manager] = (mgrCount[r.manager] || 0) + 1; });
+    return {
+      name, items,
+      phone: items.find(r => r.clientPhone)?.clientPhone || '',
+      managers: Object.entries(mgrCount).sort(([,a],[,b]) => b - a).map(([m]) => m),
+      oldest: items[0].rentDate || '',
+      maxOd: Math.max(...items.map(r => r.overdueDays)),
+      msg: noticeMessage(name, items),
+    };
+  }).sort((a, b) => a.oldest.localeCompare(b.oldest));
+
+  const hideSent = document.getElementById('noticeHideSent')?.checked || false;
+  const sentCount = noticeGroups.filter(g => noticeSent[g.name]).length;
+  const today = new Date().toISOString().slice(0, 10);
+
+  const view = document.getElementById('noticeView');
+  view.innerHTML = `
+    <div class="notice-bar">
+      <span>연체 거래처 <b>${noticeGroups.length}</b>곳 · 대여일 오래된 순 · 보냄 ${sentCount}곳</span>
+      <label><input type="checkbox" id="noticeHideSent" ${hideSent ? 'checked' : ''} onchange="renderView()"> 보낸 거래처 숨기기</label>
+    </div>` +
+  noticeGroups.map((g, i) => {
+    const sent = noticeSent[g.name];
+    if (hideSent && sent) return '';
+    const thumbs = g.items.map(r => `<div onclick="openModal('${r.id}')">
+        ${r.thumbUrl ? `<img src="${escHTML(r.thumbUrl)}" loading="lazy" alt="${escHTML(r.name)}" onerror="this.outerHTML='<div class=ph></div>'">` : '<div class="ph"></div>'}
+        <span>${escHTML(r.name)}</span></div>`).join('');
+    const phone = g.phone
+      ? `<span class="notice-phone">${escHTML(g.phone)}</span><button class="nbtn" onclick="noticeCopy(this, ${i}, 'phone')">번호 복사</button>`
+      : '<span class="notice-nophone">에어테이블에 번호 없음</span>';
+    const smsNum = g.phone.split(',')[0].replace(/[^0-9]/g, '');
+    const smsHref = smsNum ? `sms:${smsNum}?&body=${encodeURIComponent(g.msg)}` : '';
+    return `<div class="notice-card ${sent ? 'sent' : ''}">
+      <div class="notice-head">
+        <span class="notice-no">${String(i + 1).padStart(2, '0')}</span>
+        <span class="notice-name">${escHTML(addNim(g.name))}</span>
+        ${phone}
+        <span class="notice-meta">${g.items.length}권 · 가장 오래된 대여 ${escHTML(g.oldest)} · ${escHTML(g.managers.join(', ') || '담당자 미지정')}</span>
+        <span class="notice-od">최장 ${g.maxOd}일 연체</span>
+        <label class="notice-sent"><input type="checkbox" ${sent ? 'checked' : ''} onchange="noticeMarkSent(${i}, this.checked, '${today}')"> ${sent ? `보냄 ${sent.slice(5).replace('-', '/')}` : '보냄'}</label>
+      </div>
+      <div class="notice-msg">
+        <textarea id="noticeMsg${i}" aria-label="${escHTML(g.name)} 문자">${escHTML(g.msg)}</textarea>
+        <div class="notice-actions">
+          <button class="nbtn primary" onclick="noticeCopy(this, ${i}, 'msg')">문자 복사</button>
+          ${smsHref ? `<a class="nbtn" href="${smsHref}">휴대폰 문자앱 열기</a>` : ''}
+          <button class="nbtn" onclick="noticeFile(this, ${i}, 'jpg')">🖼 사진 JPG</button>
+          <button class="nbtn" onclick="noticeFile(this, ${i}, 'pdf')">📄 PDF</button>
+        </div>
+      </div>
+      <div class="notice-thumbs">${thumbs}</div>
+    </div>`;
+  }).join('');
+  view.style.display = 'block';
+}
+
+async function noticeCopy(btn, i, what) {
+  const text = what === 'phone' ? noticeGroups[i].phone : document.getElementById('noticeMsg' + i).value;
+  const label = btn.textContent;
+  try { await navigator.clipboard.writeText(text); btn.textContent = '복사됨'; }
+  catch { btn.textContent = '복사 실패'; }
+  setTimeout(() => { btn.textContent = label; }, 1500);
+}
+
+function noticeMarkSent(i, checked, date) {
+  const name = noticeGroups[i].name;
+  if (checked) noticeSent[name] = date; else delete noticeSent[name];
+  saveNoticeSent();
+  renderView();
+}
+
+async function noticeFile(btn, i, kind) {
+  const label = btn.textContent;
+  btn.disabled = true; btn.textContent = '⏳ 만드는 중...';
+  try {
+    // 기존 JPG/PDF 생성 로직 재사용 (해당 거래처의 대여 건 전체를 담음)
+    if (kind === 'jpg') await makeJPG([noticeGroups[i].name]);
+    else await makePDF([noticeGroups[i].name]);
+  } finally {
+    btn.disabled = false; btn.textContent = label;
+  }
 }
 
 // ── Modal ──
